@@ -17,7 +17,7 @@ public class Application extends JLayeredPane {
     //panels
     JPanel mainLayer = new JPanel(new BorderLayout());
     JPanel scriptIDELayer = new JPanel();
-    JPanel errorsLayer = new JPanel();
+    JPanel errorsLayer = new JPanel(new BorderLayout());
 
     //variables
     Controller controller;
@@ -94,14 +94,18 @@ public class Application extends JLayeredPane {
 
         runModelButton.addActionListener(e -> {
            if (modelList.getSelectedValue() != null) {
-               controller = new Controller(modelsPaths.get(modelList.getSelectedValue()));
-               if (dataList.getSelectedValue() != null) {
-                   controller.readDataFrom(dataPaths.get(dataList.getSelectedValue())).runModel();
-                   String result = controller.getResultsAsTsv();
-                   displayValuesOnTable(result);
+               try {
+                   controller = new Controller(modelsPaths.get(modelList.getSelectedValue()));
+                   if (dataList.getSelectedValue() != null) {
+                       controller.readDataFrom(dataPaths.get(dataList.getSelectedValue())).runModel();
+                       displayValuesOnTable(controller.getResultsAsTsv());
+                   }
+                   else {
+                       showErrorDialog(errorsLayer, "No data source was selected");
+                   }
                }
-               else {
-                   showErrorDialog(errorsLayer, "No data source was selected");
+               catch (Exception ex) {
+                   showErrorDialog(errorsLayer, ex.getMessage());
                }
            }
            else {
@@ -125,30 +129,38 @@ public class Application extends JLayeredPane {
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         JButton runScriptButton = new JButton("Run script from file");
         runScriptButton.addActionListener(e -> {
-            JFileChooser fileChooser = new JFileChooser();
+            if (controller != null) {
+                JFileChooser fileChooser = new JFileChooser();
 
-            //choosing staring directory and filter for files
-            fileChooser.setCurrentDirectory(new File("res/scripts"));
-            FileNameExtensionFilter extensionFilter = new FileNameExtensionFilter("Groovy script files (*.groovy)", "groovy");
-            fileChooser.setFileFilter(extensionFilter);
+                //choosing staring directory and filter for files
+                fileChooser.setCurrentDirectory(new File("src/res/scripts"));
+                FileNameExtensionFilter extensionFilter = new FileNameExtensionFilter("Groovy script files (*.groovy)", "groovy");
+                fileChooser.setFileFilter(extensionFilter);
 
-            int result = fileChooser.showOpenDialog(null);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                if (controller != null) {
-                    controller.runScriptFromFile(fileChooser.getSelectedFile().getAbsolutePath());
-                }
-                else {
-                    showErrorDialog(errorsLayer, "No model was counted, script usage disabled");
+                int result = fileChooser.showOpenDialog(null);
+                if (result == JFileChooser.APPROVE_OPTION) {
+                    try {
+                        controller.runScriptFromFile(fileChooser.getSelectedFile().getAbsolutePath());
+                        displayValuesOnTable(controller.getResultsAsTsv());
+                    }
+                    catch (Exception ex) {
+                        showErrorDialog(errorsLayer, ex.getMessage());
+                    }
                 }
             }
             else {
-                System.out.println("File selection cancelled");
+                showErrorDialog(errorsLayer, "No model was counted, script usage disabled");
             }
         });
 
         JButton createScriptButton = new JButton("Create and run ad hoc script");
         createScriptButton.addActionListener(e -> {
-           //todo make IDE for scripting there
+           if (controller != null) {
+                createSmallIDE(scriptIDELayer);
+           }
+           else {
+               showErrorDialog(errorsLayer, "No model was counted, script usage disabled");
+           }
         });
 
         bottomPanel.add(runScriptButton);
@@ -157,6 +169,51 @@ public class Application extends JLayeredPane {
 
         return returnPanel;
     }
+
+    private void createSmallIDE(JPanel parentPanel) {
+        JDialog scriptDialog = new JDialog((JFrame)null, "Script", true); // Modal dialog
+        scriptDialog.setSize(400, 300);
+        scriptDialog.setLayout(new BorderLayout());
+
+        // Create a text area for script input
+        JTextArea textArea = new JTextArea();
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+
+        // Add the text area inside a scroll pane
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scriptDialog.add(scrollPane, BorderLayout.CENTER);
+
+        // Create a panel for buttons
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton okButton = new JButton("OK");
+        okButton.addActionListener(e -> {
+            try {
+                controller.runScript(textArea.getText());
+                displayValuesOnTable(controller.getResultsAsTsv());
+                scriptDialog.dispose();
+            }
+            catch (Exception ex) {
+                showErrorDialog(errorsLayer, ex.getMessage());
+            }
+        });
+
+        JButton cancelButton = new JButton("Cancel");
+        cancelButton.addActionListener(e -> scriptDialog.dispose());
+
+        //adding buttons to the panel
+        buttonPanel.add(okButton);
+        buttonPanel.add(cancelButton);
+
+        //adding the button panel to the dialog
+        scriptDialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        //showing the dialog
+        scriptDialog.setLocationRelativeTo(parentPanel);
+        scriptDialog.setVisible(true);
+    }
+
 
 
     private String[] parseModels() {
@@ -243,11 +300,8 @@ public class Application extends JLayeredPane {
         errorDialog.setSize(300, 150);
         errorDialog.setLayout(new BorderLayout());
 
-        //setting location relative to provided JPanel(if exists), else setting to center of the screen
-        errorDialog.setLocationRelativeTo(parentPanel);
-
         //adding label
-        JLabel errorLabel = new JLabel(errMessage, SwingConstants.CENTER);
+        JLabel errorLabel = new JLabel("<html><div style='text-align: center;'>" + errMessage + "</div></html>");
         errorDialog.add(errorLabel, BorderLayout.CENTER);
 
         //adding OK button to exit
@@ -257,9 +311,11 @@ public class Application extends JLayeredPane {
         buttonPanel.add(okButton);
         errorDialog.add(buttonPanel, BorderLayout.SOUTH);
 
+        //setting location relative to provided JPanel(if exists), else setting to center of the screen
+        errorDialog.setLocationRelativeTo(parentPanel);
         errorDialog.setVisible(true);
     }
 
     //todo (last step). make design
-    //helper methods
+    //helper methods(for design)
 }

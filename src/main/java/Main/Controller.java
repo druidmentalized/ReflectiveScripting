@@ -2,54 +2,64 @@ package Main;
 
 import Annotations.Bind;
 
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
 
 public class Controller {
 
 
-    private Object modelInstance;
+    private final Object modelInstance;
     private String years = "";
+    private final Map<String, double[]> allScriptVariables = new HashMap<>();
+    private static final Set<String> GROOVY_KEYWORDS = Set.of(
+            "def", "new", "for", "if", "else", "while", "package", "class",
+            "return", "double", "int", "float", "boolean", "char", "long",
+            "short", "void", "true", "false", "null", "this", "super",
+            "as", "in", "switch", "case", "break", "continue"
+    );
 
     public Controller(String modelName) {
         try {
+            //creating model according to its name
             modelInstance = Class.forName(modelName).newInstance();
         }
-        catch (Exception e) {
-            System.err.println("Something went wrong during instantiation of a model");
-            e.printStackTrace();
+        catch (ClassNotFoundException e) {
+            throw new RuntimeException("Class not found: " + modelName);
+        } catch (InstantiationException e) {
+            throw new RuntimeException("Something went wrong while initializing the class: " + modelName);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Illegal access while found during initialization of the class: " + modelName);
         }
     }
 
     public Controller readDataFrom(String fname) {
-        //Map<String, Double[]> variables = new HashMap<>(); todo make enhanced reading of data using map
-        try (BufferedReader br = new BufferedReader(new FileReader(fname))) {
+        //filling map with variables names and their values
+        int LL = 0;
+        Map<String, double[]> dataVariables = new HashMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(fname))){
             String line;
-            int columnsAmount = 0;
 
             while ((line = br.readLine()) != null) {
                 String[] tokens = line.split("\\s+");
 
-                //getting exact field by name
-                Field field = modelInstance.getClass().getDeclaredField(tokens[0].equals("LATA") ? "LL" : tokens[0]);
-                field.setAccessible(true);
-
-                if (field.getName().equals("LL")) {
-                    //assigning years without the name of the variable
-                    field.set(modelInstance, tokens.length - 1);
-                    columnsAmount = tokens.length - 1;
+                if (tokens[0].equals("LATA")) {
+                    LL = tokens.length - 1;
                     for (int i = 1; i < tokens.length; i++) {
                         years += tokens[i] + " ";
                     }
                 }
                 else {
-                    //setting all values and assigning them to a variable
-                    double[] values = new double[columnsAmount];
+                    double[] values = new double[LL];
                     for (int i = 0; i < values.length; i++) {
                         if (i + 1 < tokens.length) {
                             values[i] = Double.parseDouble(tokens[i + 1]);
@@ -61,41 +71,98 @@ public class Controller {
                             values[i] = values[i - 1];
                         }
                     }
-                    field.set(modelInstance, values);
+                    dataVariables.put(tokens[0], values);
                 }
             }
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException("File not found:\n" + fname);
+        } catch (IOException e) {
+            throw new RuntimeException("Error occurred while reading from file");
         }
-        catch (NoSuchFieldException e) {
-            System.err.println("Some of the fields from the data doesn't exist in the given model" );
-            //todo remake so that all field may be taken
-        }
-        catch (Exception e) {
-            e.printStackTrace();
+
+        //assigning values only to variables which exist inside this model
+        for (Field field : modelInstance.getClass().getDeclaredFields()) {
+            try {
+                if (field.isAnnotationPresent(Bind.class)) {
+                    field.setAccessible(true);
+                    String fieldName = field.getName();
+                    if (fieldName.equals("LL")) {
+                        field.set(modelInstance, LL);
+                    }
+                    else {
+                        field.set(modelInstance, dataVariables.get(fieldName) == null ? new double[LL] : dataVariables.get(fieldName));
+                    }
+                }
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException("Illegal access while reading field: " + field.getName());
+            }
+
         }
         return this;
     }
 
     public Controller runModel() {
         try {
+            //executing run method
             modelInstance.getClass().getMethod("run").invoke(modelInstance);
-        }
-        catch (Exception e) {
-            System.err.println("Something went wrong during model execution");
+        } catch (InvocationTargetException e) {
+            throw new RuntimeException("Error happened during invocation of run method");
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Illegal access while invoking run method");
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException("No run method found");
         }
         return this;
     }
 
     public Controller runScriptFromFile(String fname) {
+        String script;
+
+        //reading script
+        try {
+            script = Files.readString(Path.of(fname));
+        }
+        catch (IOException e) {
+            throw new RuntimeException("Error while reading script file");
+        }
+
+        //executing script
+        runScript(script);
+
         return this;
     }
 
     public Controller runScript(String script) {
+        //creating groovy engine
+        ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
+        ScriptEngine groovyEngine = scriptEngineManager.getEngineByName("groovy");
+
+        //retrieving and filling all variables with data
+        Set<String> scriptVariables = retrieveVariablesFromScript(script);
+        passVariablesFromModel(groovyEngine, scriptVariables);
+
+        //computing data from script
+        try {
+            groovyEngine.eval(script);
+        } catch (ScriptException e) {
+            throw new RuntimeException("Error while executing groovy script");
+        }
+
+        //writing computed data to the variable
+        for (String variable : scriptVariables) {
+            double[] value = (double[])groovyEngine.get(variable);
+            if (value != null) {
+                allScriptVariables.put(variable, value);
+            }
+        }
 
         return this;
     }
 
     public String getResultsAsTsv() {
         String returnString = "";
+
+        //writing calculated data from model
         try {
             for (Field field : modelInstance.getClass().getDeclaredFields()) {
                 if (field.isAnnotationPresent(Bind.class)) {
@@ -105,7 +172,7 @@ public class Controller {
                     if (fieldName.equals("LL")) {
                         returnString += fieldName + "\t" + years + "\n";
                     }
-                    else {
+                    else if (field.get(modelInstance) != null) {
                         double[] values = (double[]) field.get(modelInstance);
                         returnString += fieldName + "\t";
                         for (double value : values) {
@@ -115,10 +182,64 @@ public class Controller {
                     }
                 }
             }
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Illegal access while accessing model variables");
         }
-        catch (Exception e) {
-            e.printStackTrace();
+
+        //writing additional data from scripts(if exists)
+        for (String variable : allScriptVariables.keySet()) {
+            returnString += variable + "\t";
+            for (double value : allScriptVariables.get(variable)) {
+                returnString += value + " ";
+            }
+            returnString += "\n";
         }
+
         return returnString;
     }
+
+    private Set<String> retrieveVariablesFromScript(String script) {
+        Set<String> variables = new HashSet<>();
+
+        // Split the script into tokens by whitespace and special characters
+        String[] tokens = script.split("[\\s\\W]+");
+
+        for (String token : tokens) {
+            // Add to variables if it's not a single lowercase letter and starts with a valid identifier character
+            if (token.matches("[a-zA-Z_][a-zA-Z0-9_]*")
+                    && !(token.length() == 1 && Character.isLowerCase(token.charAt(0)))
+                    && !GROOVY_KEYWORDS.contains(token)) {
+                variables.add(token);
+            }
+        }
+
+        return variables;
+    }
+
+    private void passVariablesFromModel(ScriptEngine groovyEngine, Set<String> variables) {
+        Iterator<String> iterator = variables.iterator();
+        while (iterator.hasNext()) {
+            String variable = iterator.next();
+            try {
+                Field field = modelInstance.getClass().getDeclaredField(variable);
+                if (field.isAnnotationPresent(Bind.class)) {
+                    field.setAccessible(true);
+
+                    //passing the variable to the script engine
+                    groovyEngine.put(variable, field.get(modelInstance));
+
+                    //removing the variable using the iterator
+                    iterator.remove();
+                } else {
+                    throw new NoSuchFieldException();
+                }
+            } catch (NoSuchFieldException e) {
+                //ignored, as many fields won't be accessible or invisible because of having no annotation
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException("Variable you're trying to reach is inaccessible");
+            }
+        }
+    }
+
+
 }
