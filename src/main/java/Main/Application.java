@@ -181,11 +181,11 @@ public class Application extends JLayeredPane {
         textArea.setLineWrap(true);
         textArea.setWrapStyleWord(true);
 
-        // Add the text area inside a scroll pane
+        //adding the text area inside a scroll pane
         JScrollPane scrollPane = new JScrollPane(textArea);
         scriptDialog.add(scrollPane, BorderLayout.CENTER);
 
-        // Create a panel for buttons
+        //creating a panel for buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         JButton okButton = new JButton("OK");
         okButton.addActionListener(e -> {
@@ -213,8 +213,6 @@ public class Application extends JLayeredPane {
         scriptDialog.setLocationRelativeTo(parentPanel);
         scriptDialog.setVisible(true);
     }
-
-
 
     private String[] parseModels() {
         ArrayList<String> allModelsArrList = new ArrayList<>();
@@ -315,7 +313,4 @@ public class Application extends JLayeredPane {
         errorDialog.setLocationRelativeTo(parentPanel);
         errorDialog.setVisible(true);
     }
-
-    //todo (last step). make design
-    //helper methods(for design)
 }

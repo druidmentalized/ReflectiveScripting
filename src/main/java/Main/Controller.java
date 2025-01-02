@@ -31,7 +31,7 @@ public class Controller {
     public Controller(String modelName) {
         try {
             //creating model according to its name
-            modelInstance = Class.forName(modelName).newInstance();
+            modelInstance = Class.forName(modelName).getDeclaredConstructor().newInstance();
         }
         catch (ClassNotFoundException e) {
             throw new RuntimeException("Class not found: " + modelName);
@@ -39,6 +39,8 @@ public class Controller {
             throw new RuntimeException("Something went wrong while initializing the class: " + modelName);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Illegal access while found during initialization of the class: " + modelName);
+        } catch (NoSuchMethodException | InvocationTargetException e) {
+            throw new RuntimeException("No constructor found for class: " + modelName);
         }
     }
 
@@ -96,7 +98,6 @@ public class Controller {
             } catch (IllegalAccessException e) {
                 throw new RuntimeException("Illegal access while reading field: " + field.getName());
             }
-
         }
         return this;
     }
@@ -127,30 +128,31 @@ public class Controller {
         }
 
         //executing script
-        runScript(script);
-
-        return this;
+        return runScript(script);
     }
 
     public Controller runScript(String script) {
         //creating groovy engine
         ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
-        ScriptEngine groovyEngine = scriptEngineManager.getEngineByName("groovy");
+        ScriptEngine scriptEngine = scriptEngineManager.getEngineByName("groovy");
+        if (scriptEngine == null) {
+            throw new RuntimeException("Script engine not found");
+        }
 
         //retrieving and filling all variables with data
         Set<String> scriptVariables = retrieveVariablesFromScript(script);
-        passVariablesFromModel(groovyEngine, scriptVariables);
+        passVariablesFromModel(scriptEngine, scriptVariables);
 
         //computing data from script
         try {
-            groovyEngine.eval(script);
+            scriptEngine.eval(script);
         } catch (ScriptException e) {
             throw new RuntimeException("Error while executing groovy script");
         }
 
         //writing computed data to the variable
         for (String variable : scriptVariables) {
-            double[] value = (double[])groovyEngine.get(variable);
+            double[] value = (double[])scriptEngine.get(variable);
             if (value != null) {
                 allScriptVariables.put(variable, value);
             }
