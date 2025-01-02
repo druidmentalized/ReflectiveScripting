@@ -17,8 +17,6 @@ public class Model1 {
     @Bind private double [] IMP; // import
     @Bind private double [] PKB; // GDP
 
-    private double temp; // this field is not associated with the data model or with the results
-
     public Model1() {}
 
     public void run() {

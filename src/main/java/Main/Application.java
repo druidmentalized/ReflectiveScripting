@@ -2,6 +2,7 @@ package Main;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.io.BufferedReader;
 import java.io.File;
@@ -11,19 +12,40 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
-public class Application extends JPanel {
+public class Application extends JLayeredPane {
 
+    //panels
+    JPanel mainLayer = new JPanel(new BorderLayout());
+    JPanel scriptIDELayer = new JPanel();
+    JPanel errorsLayer = new JPanel();
+
+    //variables
+    Controller controller;
     private final Map<String, String> modelsPaths = new HashMap<>();
     private final Map<String, String> dataPaths = new HashMap<>();
     private JTable calculationsTable;
 
     public Application() {
         this.setPreferredSize(new Dimension(800, 400));
-        this.setLayout(new BorderLayout());
+        this.setLayout(null);
 
-        //filling panel
-        this.add(createModelsAndDataPanel(), BorderLayout.WEST);
-        this.add(createTableAndScriptButtonsPanel(), BorderLayout.CENTER);
+        //main panel
+        mainLayer.setBounds(0, 0, (int)this.getPreferredSize().getWidth(), (int)this.getPreferredSize().getHeight());
+        mainLayer.add(createModelsAndDataPanel(), BorderLayout.WEST);
+        mainLayer.add(createTableAndScriptButtonsPanel(), BorderLayout.CENTER);
+
+        //script IDE panel
+        scriptIDELayer.setBounds(0, 0, (int)this.getPreferredSize().getWidth(), (int)this.getPreferredSize().getHeight());
+        scriptIDELayer.setOpaque(false);
+
+        //errors panel
+        errorsLayer.setBounds(0, 0, (int)this.getPreferredSize().getWidth(), (int)this.getPreferredSize().getHeight());
+        errorsLayer.setOpaque(false);
+
+        //adding different layers to the pane
+        this.add(mainLayer, Integer.valueOf(1));
+        this.add(scriptIDELayer, Integer.valueOf(2));
+        this.add(errorsLayer, Integer.valueOf(3));
     }
 
     private JPanel createModelsAndDataPanel() {
@@ -51,7 +73,7 @@ public class Application extends JPanel {
         JList<String> dataList = new JList<>(parseData());
         dataList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                displayValuesOnTable(compressDataToString(dataPaths.get(dataList.getSelectedValue())));
+                displayValuesOnTable(compressDataToTsv(dataPaths.get(dataList.getSelectedValue())));
             }
         });
 
@@ -59,11 +81,37 @@ public class Application extends JPanel {
 
         returnPanel.add(listsPanel, BorderLayout.CENTER);
 
-        //run model button
-        JButton runModelButton = new JButton("Run model");
-        returnPanel.add(runModelButton, BorderLayout.SOUTH);
+        //run model
+        JPanel buttonPanel = createButtonPanel(modelList, dataList);
+        returnPanel.add(buttonPanel, BorderLayout.SOUTH);
 
         return returnPanel;
+    }
+
+    private JPanel createButtonPanel(JList<String> modelList, JList<String> dataList) {
+        //creating button with listener
+        JButton runModelButton = new JButton("Run model");
+
+        runModelButton.addActionListener(e -> {
+           if (modelList.getSelectedValue() != null) {
+               controller = new Controller(modelsPaths.get(modelList.getSelectedValue()));
+               if (dataList.getSelectedValue() != null) {
+                   controller.readDataFrom(dataPaths.get(dataList.getSelectedValue())).runModel();
+                   String result = controller.getResultsAsTsv();
+                   displayValuesOnTable(result);
+               }
+               else {
+                   showErrorDialog(errorsLayer, "No data source was selected");
+               }
+           }
+           else {
+               showErrorDialog(errorsLayer, "No model was selected");
+           }
+        });
+
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.add(runModelButton);
+        return buttonPanel;
     }
 
     private JPanel createTableAndScriptButtonsPanel() {
@@ -76,7 +124,32 @@ public class Application extends JPanel {
         //bottom panel for buttons
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         JButton runScriptButton = new JButton("Run script from file");
+        runScriptButton.addActionListener(e -> {
+            JFileChooser fileChooser = new JFileChooser();
+
+            //choosing staring directory and filter for files
+            fileChooser.setCurrentDirectory(new File("res/scripts"));
+            FileNameExtensionFilter extensionFilter = new FileNameExtensionFilter("Groovy script files (*.groovy)", "groovy");
+            fileChooser.setFileFilter(extensionFilter);
+
+            int result = fileChooser.showOpenDialog(null);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                if (controller != null) {
+                    controller.runScriptFromFile(fileChooser.getSelectedFile().getAbsolutePath());
+                }
+                else {
+                    showErrorDialog(errorsLayer, "No model was counted, script usage disabled");
+                }
+            }
+            else {
+                System.out.println("File selection cancelled");
+            }
+        });
+
         JButton createScriptButton = new JButton("Create and run ad hoc script");
+        createScriptButton.addActionListener(e -> {
+           //todo make IDE for scripting there
+        });
 
         bottomPanel.add(runScriptButton);
         bottomPanel.add(createScriptButton);
@@ -84,6 +157,7 @@ public class Application extends JPanel {
 
         return returnPanel;
     }
+
 
     private String[] parseModels() {
         ArrayList<String> allModelsArrList = new ArrayList<>();
@@ -98,7 +172,7 @@ public class Application extends JPanel {
                     if (file.getName().toLowerCase().contains("model") && file.getName().endsWith(".java")) {
                         String nameWithoutExtension = file.getName().substring(0, file.getName().lastIndexOf("."));
                         allModelsArrList.add(nameWithoutExtension);
-                        modelsPaths.put(nameWithoutExtension, file.getAbsolutePath());
+                        modelsPaths.put(nameWithoutExtension, "Models." + nameWithoutExtension);
                     }
                 }
             }
@@ -127,7 +201,7 @@ public class Application extends JPanel {
         return allDataArrList.toArray(new String[0]);
     }
 
-    private String compressDataToString(String filePath) {
+    private String compressDataToTsv(String filePath) {
         StringBuilder returnString = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
             String line;
@@ -138,7 +212,6 @@ public class Application extends JPanel {
         }
         catch (IOException e) {
             System.err.println("Error during reading of the file.");
-            e.printStackTrace();
         }
         return returnString.toString();
     }
@@ -161,6 +234,30 @@ public class Application extends JPanel {
         }
 
         calculationsTable.setModel(new javax.swing.table.DefaultTableModel(data, columns));
+    }
+
+    private void showErrorDialog(JPanel parentPanel, String errMessage) {
+        JDialog errorDialog = new JDialog((JFrame)null, "Error", true);
+
+        //setting size and layout
+        errorDialog.setSize(300, 150);
+        errorDialog.setLayout(new BorderLayout());
+
+        //setting location relative to provided JPanel(if exists), else setting to center of the screen
+        errorDialog.setLocationRelativeTo(parentPanel);
+
+        //adding label
+        JLabel errorLabel = new JLabel(errMessage, SwingConstants.CENTER);
+        errorDialog.add(errorLabel, BorderLayout.CENTER);
+
+        //adding OK button to exit
+        JButton okButton = new JButton("OK");
+        okButton.addActionListener(e -> errorDialog.dispose());
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.add(okButton);
+        errorDialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        errorDialog.setVisible(true);
     }
 
     //todo (last step). make design

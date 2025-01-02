@@ -10,7 +10,7 @@ public class Main {
     private static void createWindow() {
         JFrame window = new JFrame("Reflective Scripting");
         window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        //window.setResizable(false);
+        window.setResizable(false);
 
         window.add(new Application());
 
