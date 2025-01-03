@@ -237,9 +237,15 @@ public class Controller {
                 }
             } catch (NoSuchFieldException e) {
                 //ignored, as many fields won't be accessible or invisible because of having no annotation
+
+                //also trying to find it map of variables from scripts
+                if (allScriptVariables.containsKey(variable)) {
+                    groovyEngine.put(variable, allScriptVariables.get(variable));
+                }
             } catch (IllegalAccessException e) {
                 throw new RuntimeException("Variable you're trying to reach is inaccessible");
             }
+
         }
     }
 
