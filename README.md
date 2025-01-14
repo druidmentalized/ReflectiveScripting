@@ -47,7 +47,7 @@ The project emphasizes flexibility in handling simulation models, managing input
     ```
 - **Using the Controller**
     - Example:
-    ```
+    ``` Java
   Controller controller = new Controller("Model1");
     ctl.readDataFrom("data1.txt")
     .runModel()
@@ -56,7 +56,7 @@ The project emphasizes flexibility in handling simulation models, managing input
     ```
 - **Scripts**
     - Example `Groovy` script for calculating export capacity:
-    ```groovy
+    ``` Groovy
     ZDEKS = new double[LL];
     for (i = 0; i < LL; i++) {
     ZDEKS[i] = EKS[i] / PKB[i];
